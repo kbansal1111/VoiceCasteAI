@@ -88,7 +88,6 @@ Transform your blog posts into **engaging, interactive AI-powered podcasts** wit
 |------------|---------|
 | **Next.js 14** | React framework with App Router, TypeScript |
 | **Tailwind CSS** | Styling and UI components |
-| **shadcn/ui** | Pre-built accessible components |
 | **Three.js** | 3D avatar rendering |
 | **React Three Fiber** | React integration for Three.js |
 | **Socket.io-client** | Real-time WebSocket communication |
