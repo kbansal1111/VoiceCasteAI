@@ -1,0 +1,215 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Satoshi:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+    :root {
+        /* Background Colors */
+        --color-background: #0a0a0a;
+        /* Deep space base */
+        --color-foreground: #f8fafc;
+        /* Primary text - gray-50 */
+
+        /* Surface Colors */
+        --color-card: #1a1a1a;
+        /* Card backgrounds - gray-900 */
+        --color-card-foreground: #f8fafc;
+        /* Card text - gray-50 */
+        --color-popover: #1a1a1a;
+        /* Popover background - gray-900 */
+        --color-popover-foreground: #f8fafc;
+        /* Popover text - gray-50 */
+
+        /* Primary Colors */
+        --color-primary: #7c3aed;
+        /* Electric purple - violet-600 */
+        --color-primary-foreground: #ffffff;
+        /* white */
+
+        /* Secondary Colors */
+        --color-secondary: #2563eb;
+        /* Deep blue - blue-600 */
+        --color-secondary-foreground: #ffffff;
+        /* white */
+
+        /* Accent Colors */
+        --color-accent: #06b6d4;
+        /* Cyan - cyan-500 */
+        --color-accent-foreground: #0a0a0a;
+        /* Deep space base */
+
+        /* Muted Colors */
+        --color-muted: #262626;
+        /* Muted background - gray-800 */
+        --color-muted-foreground: #94a3b8;
+        /* Secondary text - slate-400 */
+
+        /* Destructive Colors */
+        --color-destructive: #ef4444;
+        /* Error red - red-500 */
+        --color-destructive-foreground: #ffffff;
+        /* white */
+
+        /* Success Colors */
+        --color-success: #10b981;
+        /* Success green - emerald-500 */
+        --color-success-foreground: #ffffff;
+        /* white */
+
+        /* Warning Colors */
+        --color-warning: #f59e0b;
+        /* Warning amber - amber-500 */
+        --color-warning-foreground: #0a0a0a;
+        /* Deep space base */
+
+        /* Error Colors */
+        --color-error: #ef4444;
+        /* Error red - red-500 */
+        --color-error-foreground: #ffffff;
+        /* white */
+
+        /* Border Colors */
+        --color-border: rgba(255, 255, 255, 0.1);
+        /* Subtle white border */
+        --color-input: #262626;
+        /* Input background - gray-800 */
+        --color-ring: #7c3aed;
+        /* Focus ring - violet-600 */
+
+        /* Radius */
+        --radius-sm: 8px;
+        --radius-md: 12px;
+        --radius-lg: 16px;
+        --radius-xl: 24px;
+    }
+}
+
+@layer base {
+    * {
+        @apply border-border;
+    }
+
+    body {
+        @apply bg-background text-foreground;
+        font-family: 'Satoshi', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        font-size: 16px;
+        line-height: 1.6;
+    }
+
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6 {
+        font-family: 'JetBrains Mono', monospace;
+        font-weight: 600;
+    }
+
+    h1 {
+        font-size: 2.5rem;
+        line-height: 1.1;
+    }
+
+    h2 {
+        font-size: 2rem;
+        line-height: 1.2;
+    }
+
+    h3 {
+        font-size: 1.5rem;
+        line-height: 1.25;
+    }
+
+    h4 {
+        font-size: 1.25rem;
+        line-height: 1.3;
+    }
+
+    h5 {
+        font-size: 1.125rem;
+        line-height: 1.4;
+    }
+
+    small,
+    .text-caption {
+        font-family: 'Inter', sans-serif;
+        font-size: 0.875rem;
+        line-height: 1.4;
+        letter-spacing: 0.025em;
+    }
+
+    code,
+    pre,
+    .text-data {
+        font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+        font-variant-numeric: tabular-nums;
+    }
+
+    @media (max-width: 768px) {
+        body {
+            font-size: 15px;
+        }
+    }
+}
+
+@layer utilities {
+    .text-balance {
+        text-wrap: balance;
+    }
+
+    .glow-primary {
+        box-shadow: 0 0 20px rgba(124, 58, 237, 0.15);
+    }
+
+    .glow-primary-md {
+        box-shadow: 0 0 12px rgba(124, 58, 237, 0.08);
+    }
+
+    .glow-primary-lg {
+        box-shadow: 0 0 24px rgba(124, 58, 237, 0.2);
+    }
+
+    .glow-secondary {
+        box-shadow: 0 0 20px rgba(37, 99, 235, 0.15);
+    }
+
+    .glow-accent {
+        box-shadow: 0 0 20px rgba(6, 182, 212, 0.15);
+    }
+
+    .gradient-border {
+        border-image: linear-gradient(135deg, #7c3aed, #2563eb) 1;
+    }
+
+    .gradient-primary {
+        background: linear-gradient(135deg, #7c3aed, #2563eb);
+    }
+
+    .smooth-scroll {
+        scroll-behavior: smooth;
+        scroll-padding-top: 80px;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar-track {
+        background: #1a1a1a;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+        background: #333333;
+        border-radius: 4px;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+        background: #404040;
+    }
+}
