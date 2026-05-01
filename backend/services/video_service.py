@@ -39,8 +39,9 @@ async def render(audio_path: str, avatar_type: str = "avatar-1") -> str:
     ]
 
     try:
-        subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True)
-        subprocess.run(cmd, capture_output=True, check=True, timeout=300)
+        import asyncio
+        await asyncio.to_thread(subprocess.run, ["ffmpeg", "-version"], capture_output=True, check=True)
+        await asyncio.to_thread(subprocess.run, cmd, capture_output=True, check=True, timeout=300)
         return video_path
     except (subprocess.CalledProcessError, FileNotFoundError) as e:
         print(f"WARNING: FFmpeg missing or failed. Rendering will be skipped: {e}")
