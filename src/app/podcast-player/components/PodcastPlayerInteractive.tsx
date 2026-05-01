@@ -20,6 +20,7 @@ interface PodcastData {
     blog_text?: string;
     duration_seconds?: number;
     avatar_type?: string;
+    video_url?: string;
 }
 
 const PodcastPlayerInteractive = () => {
@@ -41,9 +42,11 @@ const PodcastPlayerInteractive = () => {
     const [isAnswering, setIsAnswering] = useState(false);
     const [interruptionAudioData, setInterruptionAudioData] = useState<number[]>([]);
 
+    // Chat sidebar toggle — closed by default
+    const [isChatOpen, setIsChatOpen] = useState(false);
+
     // Session Recording State
     const [isRecordingSession, setIsRecordingSession] = useState(false);
-    const [sessionChunks, setSessionChunks] = useState<Blob[]>([]);
     const sessionRecorderRef = useRef<MediaRecorder | null>(null);
 
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -52,71 +55,47 @@ const PodcastPlayerInteractive = () => {
     const audioCtxRef = useRef<AudioContext | null>(null);
     const masterDestRef = useRef<MediaStreamAudioDestinationNode | null>(null);
 
-    useEffect(() => {
-        setIsHydrated(true);
-    }, []);
+    useEffect(() => { setIsHydrated(true); }, []);
 
     useEffect(() => {
-        if (!podcastId) {
-            setError('No podcast ID found in URL.');
-            setLoading(false);
-            return;
-        }
+        if (!podcastId) { setError('No podcast ID found in URL.'); setLoading(false); return; }
         api.get(`/api/podcasts/${podcastId}`)
             .then(({ data }) => setPodcast(data))
             .catch((err) => {
-                if (err.response?.status === 401) {
-                    setError('Please log in to view this podcast.');
-                } else {
-                    setError('Podcast not found.');
-                }
+                setError(err.response?.status === 401 ? 'Please log in to view this podcast.' : 'Podcast not found.');
             })
             .finally(() => setLoading(false));
     }, [podcastId]);
 
+    /* ─── Session Recording ─────────────────────────────────────────── */
     const startSessionRecording = () => {
         const canvas = document.querySelector('canvas');
-        if (!canvas || !audioCtxRef.current) {
-            console.error('Canvas or AudioContext not found');
-            return;
-        }
-
+        if (!canvas || !audioCtxRef.current) { console.error('Canvas or AudioContext not found'); return; }
         try {
-            // Master Audio Setup for Recording
             if (!masterDestRef.current) {
                 masterDestRef.current = audioCtxRef.current.createMediaStreamDestination();
             }
-
-            console.log('Starting session recording...');
             const canvasStream = (canvas as any).captureStream(30);
-
             const combinedStream = new MediaStream([
                 ...canvasStream.getVideoTracks(),
                 ...masterDestRef.current.stream.getAudioTracks()
             ]);
-
-            const recorder = new MediaRecorder(combinedStream, {
-                mimeType: 'video/webm;codecs=vp9',
-                bitsPerSecond: 5000000
-            });
+            const recorder = new MediaRecorder(combinedStream, { mimeType: 'video/webm;codecs=vp9', bitsPerSecond: 5000000 });
             const chunks: Blob[] = [];
-
-            recorder.ondataavailable = (e) => {
-                if (e.data.size > 0) chunks.push(e.data);
-            };
-
+            recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
             recorder.onstop = async () => {
-                console.log('Recording stopped, preparing upload...');
                 const blob = new Blob(chunks, { type: 'video/webm' });
-                await uploadSessionVideo(blob);
+                const formData = new FormData();
+                formData.append('video', blob, `session_${podcastId}.webm`);
+                formData.append('podcast_id', podcastId || '');
+                try {
+                    await api.post('/api/podcasts/upload-session', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+                } catch (err) { console.error('Failed to upload session video', err); }
             };
-
             recorder.start();
             sessionRecorderRef.current = recorder;
             setIsRecordingSession(true);
-        } catch (err) {
-            console.error('Failed to start session recording', err);
-        }
+        } catch (err) { console.error('Failed to start session recording', err); }
     };
 
     const stopSessionRecording = () => {
@@ -126,30 +105,7 @@ const PodcastPlayerInteractive = () => {
         }
     };
 
-    const uploadSessionVideo = async (blob: Blob) => {
-        const formData = new FormData();
-        formData.append('video', blob, `session_${podcastId}.webm`);
-        formData.append('podcast_id', podcastId || '');
-
-        try {
-            const { data } = await api.post('/api/podcasts/upload-session', formData, {
-                headers: { 'Content-Type': 'multipart/form-data' },
-            });
-            console.log('Session video uploaded successfully:', data.url);
-        } catch (err) {
-            console.error('Failed to upload session video', err);
-        }
-    };
-
-    const handleAuthClick = (type: 'login' | 'register') => {
-        setAuthType(type);
-        setShowAuthModal(true);
-    };
-
-    const handleAuthSuccess = () => {
-        setShowAuthModal(false);
-    };
-
+    /* ─── Voice Interruption ────────────────────────────────────────── */
     const handleVoiceAction = (action: string) => {
         switch (action) {
             case 'play': setIsPlaying(true); break;
@@ -161,130 +117,86 @@ const PodcastPlayerInteractive = () => {
 
     const toggleInterruption = async () => {
         if (isInterrupting) {
-            // Stop recording
             if (mediaRecorderRef.current?.state === 'recording') {
                 mediaRecorderRef.current.stop();
                 setIsInterrupting(false);
             }
             return;
         }
-
-        // Start recording
-        setIsPlaying(false); // Pause main playback
+        setIsPlaying(false);
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             const recorder = new MediaRecorder(stream);
             const chunks: BlobPart[] = [];
-
             recorder.ondataavailable = (e) => chunks.push(e.data);
             recorder.onstop = async () => {
                 stream.getTracks().forEach((t) => t.stop());
                 setIsProcessingInterruption(true);
-
                 const blob = new Blob(chunks, { type: 'audio/webm' });
                 const formData = new FormData();
                 formData.append('audio', blob, 'voice.webm');
                 formData.append('podcast_id', podcastId || '');
                 formData.append('context_timestamp', currentTime.toString());
-
                 try {
-                    const { data } = await api.post('/api/voice-interrupt', formData, {
-                        headers: { 'Content-Type': 'multipart/form-data' },
-                    });
-                    if (data.audio_url) {
-                        playInterruptionResponse(data.audio_url);
-                    } else {
-                        setIsPlaying(true); // resume if failed
-                    }
+                    const { data } = await api.post('/api/voice-interrupt', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+                    if (data.audio_url) playInterruptionResponse(data.audio_url);
+                    else setIsPlaying(true);
                 } catch (err) {
                     console.error('Failed to process voice interruption', err);
                     setIsPlaying(true);
-                } finally {
-                    setIsProcessingInterruption(false);
-                }
+                } finally { setIsProcessingInterruption(false); }
             };
-
             recorder.start();
             mediaRecorderRef.current = recorder;
             setIsInterrupting(true);
-
-            // Auto stop after 15 seconds max
             setTimeout(() => {
                 if (mediaRecorderRef.current?.state === 'recording') {
                     mediaRecorderRef.current.stop();
                     setIsInterrupting(false);
                 }
             }, 15000);
-
-        } catch (err) {
-            console.error('Failed to access microphone', err);
-        }
+        } catch (err) { console.error('Failed to access microphone', err); }
     };
 
     const playInterruptionResponse = (url: string) => {
         const audio = new Audio(url);
-        audio.crossOrigin = "anonymous";
-
-        if (!audioCtxRef.current) {
-            audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-        }
-        if (audioCtxRef.current.state === 'suspended') {
-            audioCtxRef.current.resume();
-        }
-
+        audio.crossOrigin = 'anonymous';
+        if (!audioCtxRef.current) audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+        if (audioCtxRef.current.state === 'suspended') audioCtxRef.current.resume();
         const source = audioCtxRef.current.createMediaElementSource(audio);
         analyzerRef.current = audioCtxRef.current.createAnalyser();
         analyzerRef.current.fftSize = 64;
-
         source.connect(analyzerRef.current);
         analyzerRef.current.connect(audioCtxRef.current.destination);
-
-        // ALSO connect to master recording destination if it exists
-        if (masterDestRef.current) {
-            source.connect(masterDestRef.current);
-        }
-
+        if (masterDestRef.current) source.connect(masterDestRef.current);
         audio.onplay = () => {
             setIsAnswering(true);
             const bufferLength = analyzerRef.current!.frequencyBinCount;
             const dataArray = new Uint8Array(bufferLength);
-
-            const updateAudioData = () => {
+            const update = () => {
                 if (!analyzerRef.current) return;
                 analyzerRef.current.getByteFrequencyData(dataArray);
-                const normalizedData = Array.from(dataArray).map(v => v / 255);
-                setInterruptionAudioData(normalizedData);
-                animationFrameRef.current = requestAnimationFrame(updateAudioData);
+                setInterruptionAudioData(Array.from(dataArray).map(v => v / 255));
+                animationFrameRef.current = requestAnimationFrame(update);
             };
-            updateAudioData();
+            update();
         };
-
         audio.onended = () => {
             setIsAnswering(false);
             setInterruptionAudioData([]);
             if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
-            setIsPlaying(true); // Automatically resume main podcast
+            setIsPlaying(true);
         };
-
-        audio.play()
-            .then(() => {
-                audio.playbackRate = 1.25;
-            })
-            .catch(e => {
-                console.error("Audio play failed", e);
-                setIsPlaying(true);
-            });
+        audio.play().then(() => { audio.playbackRate = 1.25; }).catch(e => { console.error('Audio play failed', e); setIsPlaying(true); });
     };
 
+    /* ─── Loading / Error States ────────────────────────────────────── */
     if (!isHydrated || loading) {
         return (
-            <div className="min-h-screen bg-background">
+            <div className="min-h-screen bg-background flex flex-col">
                 <div className="h-16 bg-card animate-pulse" />
-                <div className="max-w-[1920px] mx-auto p-6">
-                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-[calc(100vh-120px)]">
-                        <div className="lg:col-span-8 bg-card rounded-xl animate-pulse" />
-                        <div className="lg:col-span-4 bg-card rounded-xl animate-pulse" />
-                    </div>
+                <div className="flex-1 p-6 flex gap-4">
+                    <div className="flex-1 bg-card rounded-xl animate-pulse" />
                 </div>
             </div>
         );
@@ -304,123 +216,155 @@ const PodcastPlayerInteractive = () => {
         );
     }
 
+    /* ─── Main Render ───────────────────────────────────────────────── */
     return (
-        <div className="h-screen flex flex-col bg-background overflow-hidden text-sm md:text-base">
-            <Header onAuthClick={handleAuthClick} />
+        <div className="h-screen flex flex-col bg-background overflow-hidden">
+            {/* ── Top Navigation Bar ── */}
+            <Header onAuthClick={(type) => { setAuthType(type); setShowAuthModal(true); }} />
 
-            <main className="flex-1 flex flex-col px-4 md:px-6 pt-16 pb-4 overflow-hidden">
-                <div className="flex items-center justify-between mb-2 shrink-0 gap-4 min-h-[64px]">
-                    <div className="flex-1 min-w-0">
-                        <h1 className="text-xl md:text-2xl font-heading font-bold truncate leading-tight text-white" title={podcast.title}>
-                            Podcast: {podcast.title}
-                        </h1>
-                        <p className="text-xs md:text-sm text-muted-foreground">
-                            Interactive AI Podcast
-                        </p>
+            {/* ── Sub-Header Row (title + actions) ── */}
+            <div className="flex items-center justify-between px-4 md:px-6 py-2 pt-[68px] shrink-0 gap-4">
+                <div className="flex-1 min-w-0">
+                    <h1 className="text-base md:text-xl font-heading font-bold truncate text-white" title={podcast.title}>
+                        {podcast.title}
+                    </h1>
+                    <p className="text-xs text-muted-foreground">Interactive AI Podcast</p>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex items-center gap-2 shrink-0">
+                    {/* Toggle Chat Button */}
+                    <button
+                        onClick={() => setIsChatOpen(prev => !prev)}
+                        className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold transition-all duration-200 border ${
+                            isChatOpen
+                                ? 'bg-primary border-primary text-white shadow-glow'
+                                : 'bg-card border-border hover:bg-muted text-foreground'
+                        }`}
+                    >
+                        <Icon name="ChatBubbleLeftRightIcon" size={18} />
+                        <span className="hidden sm:inline">{isChatOpen ? 'Close Chat' : 'Interactive Chat'}</span>
+                    </button>
+
+                    <ExportControls
+                        podcastId={podcast.id}
+                        podcastTitle={podcast.title}
+                        audioUrl={podcast.audio_url}
+                        videoUrl={podcast.video_url}
+                    />
+                </div>
+            </div>
+
+            {/* ── Main Content Area (fills remaining height) ── */}
+            <div className="relative flex-1 min-h-0 overflow-hidden px-4 md:px-6 pb-4">
+
+                {/* ══ Full-Screen Podcast 3D Window ══ */}
+                <div className="w-full h-full relative rounded-xl overflow-hidden border border-border/50 bg-black shadow-2xl">
+
+                    {/* 3D Avatar Scene */}
+                    <Avatar3D
+                        isPlaying={isPlaying || isAnswering}
+                        currentTime={currentTime}
+                        audioData={isAnswering ? interruptionAudioData : audioData}
+                        avatarType={podcast.avatar_type}
+                    />
+
+                    {/* ── Record Session Button (top-left overlay) ── */}
+                    <div className="absolute top-6 left-6 z-20">
+                        <button
+                            onClick={isRecordingSession ? stopSessionRecording : startSessionRecording}
+                            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg backdrop-blur-md border text-xs font-bold uppercase tracking-wider transition-all ${
+                                isRecordingSession
+                                    ? 'bg-red-600/80 border-red-500 text-white animate-pulse'
+                                    : 'bg-black/50 border-white/20 text-white hover:bg-black/70'
+                            }`}
+                        >
+                            <span className={`w-2.5 h-2.5 rounded-full ${isRecordingSession ? 'bg-white animate-ping' : 'bg-red-500'}`} />
+                            {isRecordingSession ? 'Recording...' : 'Record Session'}
+                        </button>
                     </div>
-                    <div className="shrink-0 flex items-center space-x-3">
-                        <ExportControls
-                            podcastId={podcast.id}
-                            podcastTitle={podcast.title}
+
+                    {/* ── Interrupt & Speak Button (top-right overlay) ── */}
+                    <div className="absolute top-6 right-6 z-20">
+                        <button
+                            onClick={toggleInterruption}
+                            disabled={isProcessingInterruption || isAnswering}
+                            className={`flex items-center gap-2 px-5 py-3 rounded-full shadow-2xl transition-all duration-300 backdrop-blur-xl border-2 font-bold text-sm ${
+                                isInterrupting
+                                    ? 'bg-red-600/90 border-red-500 animate-pulse text-white'
+                                    : isProcessingInterruption
+                                        ? 'bg-amber-500/90 border-amber-400 text-white cursor-wait'
+                                        : isAnswering
+                                            ? 'bg-green-600/90 border-green-500 text-white'
+                                            : 'bg-white/10 border-white/30 hover:bg-white/20 text-white'
+                            }`}
+                        >
+                            {isInterrupting ? (
+                                <><div className="w-3 h-3 rounded-full bg-white animate-ping" /><span>Stop & Send</span></>
+                            ) : isProcessingInterruption ? (
+                                <><Icon name="ArrowPathIcon" className="animate-spin" size={18} /><span>Thinking...</span></>
+                            ) : (
+                                <><Icon name="MicrophoneIcon" size={18} /><span>Interrupt & Speak</span></>
+                            )}
+                        </button>
+                    </div>
+
+                    {/* ── Audio Player (bottom overlay) ── */}
+                    <div className="absolute bottom-6 left-6 right-6 z-30">
+                        <AudioPlayer
+                            audioUrl={podcast.audio_url}
+                            transcript={podcast.script || ''}
+                            chapters={[]}
+                            onTimeUpdate={setCurrentTime}
+                            onPlayStateChange={setIsPlaying}
+                            onAudioData={setAudioData}
+                            externalPause={isInterrupting || isAnswering || isProcessingInterruption}
+                            isOverlay={true}
+                            recordingDestination={masterDestRef.current}
                         />
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 flex-1 min-h-0">
-                    {/* Main AV Area (Left 8 columns) */}
-                    <div className="lg:col-span-8 flex flex-col h-full relative min-h-0">
-                        {/* Massive 3D Avatar space with absolute controls overlay */}
-                        <div className="flex-1 relative rounded-xl overflow-hidden shadow-xl border border-border bg-black group">
-                            {/* Session Recording Button */}
-                            <div className="absolute top-6 left-6 z-20">
-                                <button
-                                    onClick={isRecordingSession ? stopSessionRecording : startSessionRecording}
-                                    className={`flex items-center gap-2 px-4 py-2 rounded-lg backdrop-blur-md border ${isRecordingSession
-                                        ? 'bg-destructive/80 border-destructive text-white animate-pulse'
-                                        : 'bg-black/40 border-white/20 text-white hover:bg-black/60'
-                                        }`}
-                                >
-                                    <div className={`w-3 h-3 rounded-full ${isRecordingSession ? 'bg-white' : 'bg-destructive'}`} />
-                                    <span className="text-xs font-bold uppercase tracking-wider">
-                                        {isRecordingSession ? 'Recording Live' : 'Record Session'}
-                                    </span>
-                                </button>
+                {/* ══ Collapsible Chat Sidebar (overlay over 3D) ══
+                    When isChatOpen=false → translate fully off screen to the right
+                    When isChatOpen=true  → slide into view                        */}
+                <div
+                    className={`absolute top-0 right-4 h-full w-[380px] max-w-full z-40 transition-transform duration-300 ease-in-out ${
+                        isChatOpen ? 'translate-x-0' : 'translate-x-[calc(100%+2rem)]'
+                    }`}
+                >
+                    <div className="h-full rounded-xl bg-card/95 backdrop-blur-2xl border border-border shadow-2xl flex flex-col overflow-hidden">
+                        {/* Chat Header with close button */}
+                        <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
+                            <div>
+                                <h2 className="font-bold text-sm">Interactive Chat</h2>
+                                <p className="text-xs text-muted-foreground">Ask questions about the podcast content</p>
                             </div>
+                            <button
+                                onClick={() => setIsChatOpen(false)}
+                                className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                            >
+                                <Icon name="XMarkIcon" size={18} />
+                            </button>
+                        </div>
 
-                            <Avatar3D
-                                isPlaying={isPlaying || isAnswering}
+                        <div className="flex-1 min-h-0 overflow-hidden">
+                            <ChatPanel
+                                podcastId={podcast.id}
+                                podcastContext={podcast.blog_text || podcast.script || ''}
                                 currentTime={currentTime}
-                                audioData={isAnswering ? interruptionAudioData : audioData}
-                                avatarType={podcast.avatar_type}
+                                onAction={handleVoiceAction}
                             />
-
-                            {/* Absolute Voice Interruption Overlay */}
-                            <div className="absolute top-6 right-6 z-20">
-                                <button
-                                    onClick={toggleInterruption}
-                                    className={`flex items-center gap-3 px-8 py-4 rounded-full shadow-2xl transition-all duration-300 backdrop-blur-xl border-2 ${isInterrupting
-                                        ? 'bg-destructive/90 border-destructive animate-pulse text-white'
-                                        : isProcessingInterruption
-                                            ? 'bg-amber-500/90 border-amber-400 text-white cursor-wait'
-                                            : isAnswering
-                                                ? 'bg-success/90 border-success text-white'
-                                                : 'bg-card/60 border-white/20 hover:bg-card/80 text-foreground scale-110'
-                                        }`}
-                                    disabled={isProcessingInterruption || isAnswering}
-                                >
-                                    {isInterrupting ? (
-                                        <>
-                                            <div className="w-4 h-4 rounded-full bg-white animate-ping" />
-                                            <span className="font-bold text-lg">Stop & Send</span>
-                                        </>
-                                    ) : isProcessingInterruption ? (
-                                        <>
-                                            <Icon name="ArrowPathIcon" className="animate-spin" size={24} />
-                                            <span className="font-bold text-lg">Thinking...</span>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <Icon name="MicrophoneIcon" size={24} />
-                                            <span className="font-bold text-lg">Interrupt & Speak</span>
-                                        </>
-                                    )}
-                                </button>
-                            </div>
-
-                            {/* BOTTOM OVERLAY: Audio Player Controls */}
-                            <div className="absolute bottom-4 left-4 right-4 z-30 opacity-95 hover:opacity-100 transition-opacity duration-300">
-                                <AudioPlayer
-                                    audioUrl={podcast.audio_url}
-                                    transcript={podcast.script || ''}
-                                    chapters={[]}
-                                    onTimeUpdate={setCurrentTime}
-                                    onPlayStateChange={setIsPlaying}
-                                    onAudioData={setAudioData}
-                                    externalPause={isInterrupting || isAnswering || isProcessingInterruption}
-                                    isOverlay={true}
-                                    recordingDestination={masterDestRef.current}
-                                />
-                            </div>
                         </div>
                     </div>
-
-                    {/* Interactive Chat (Right 4 columns) */}
-                    <div className="lg:col-span-4 h-full min-h-0">
-                        <ChatPanel
-                            podcastId={podcast.id}
-                            podcastContext={podcast.blog_text || podcast.script || ''}
-                            currentTime={currentTime}
-                            onAction={handleVoiceAction}
-                        />
-                    </div>
                 </div>
-            </main>
+            </div>
 
             <AuthModal
                 isOpen={showAuthModal}
                 onClose={() => setShowAuthModal(false)}
                 initialType={authType}
-                onSuccess={handleAuthSuccess}
+                onSuccess={() => setShowAuthModal(false)}
             />
         </div>
     );

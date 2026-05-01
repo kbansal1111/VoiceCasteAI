@@ -6,9 +6,11 @@ import Icon from '@/components/ui/AppIcon';
 interface ExportControlsProps {
     podcastId: string;
     podcastTitle: string;
+    audioUrl?: string;
+    videoUrl?: string;
 }
 
-const ExportControls = ({ podcastId, podcastTitle }: ExportControlsProps) => {
+const ExportControls = ({ podcastId, podcastTitle, audioUrl, videoUrl }: ExportControlsProps) => {
     const [isHydrated, setIsHydrated] = useState(false);
     const [isExporting, setIsExporting] = useState(false);
     const [showShareMenu, setShowShareMenu] = useState(false);
@@ -20,13 +22,22 @@ const ExportControls = ({ podcastId, podcastTitle }: ExportControlsProps) => {
     const handleExport = async (format: 'mp3' | 'mp4') => {
         setIsExporting(true);
 
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+        const url = format === 'mp3' ? audioUrl : videoUrl;
+        
+        if (!url) {
+            alert(`No ${format.toUpperCase()} file available for this podcast.`);
+            setIsExporting(false);
+            return;
+        }
 
         if (isHydrated && typeof window !== 'undefined') {
             const link = document.createElement('a');
-            link.href = `#`;
-            link.download = `${podcastTitle}.${format}`;
+            link.href = url;
+            link.download = `${podcastTitle.replace(/[^a-zA-Z0-9]/g, '_')}.${format}`;
+            link.target = "_blank";
+            document.body.appendChild(link);
             link.click();
+            document.body.removeChild(link);
         }
 
         setIsExporting(false);
@@ -74,21 +85,23 @@ const ExportControls = ({ podcastId, podcastTitle }: ExportControlsProps) => {
             <div className="flex items-center space-x-2 bg-card rounded-lg p-1 border border-border">
                 <button
                     onClick={() => handleExport('mp3')}
-                    disabled={isExporting}
+                    disabled={isExporting || !audioUrl}
                     className="flex items-center space-x-2 px-4 py-2 rounded-lg hover:bg-muted transition-all duration-250 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                     <Icon name="MusicalNoteIcon" size={20} />
                     <span className="text-sm font-medium">MP3</span>
                 </button>
 
-                <button
-                    onClick={() => handleExport('mp4')}
-                    disabled={isExporting}
-                    className="flex items-center space-x-2 px-4 py-2 rounded-lg hover:bg-muted transition-all duration-250 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                    <Icon name="VideoCameraIcon" size={20} />
-                    <span className="text-sm font-medium">MP4</span>
-                </button>
+                {videoUrl && (
+                    <button
+                        onClick={() => handleExport('mp4')}
+                        disabled={isExporting}
+                        className="flex items-center space-x-2 px-4 py-2 rounded-lg hover:bg-muted transition-all duration-250 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        <Icon name="VideoCameraIcon" size={20} />
+                        <span className="text-sm font-medium">MP4</span>
+                    </button>
+                )}
             </div>
 
             <div className="relative">

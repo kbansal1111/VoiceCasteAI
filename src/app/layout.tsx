@@ -8,8 +8,8 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-    title: 'Next.js with Tailwind CSS',
-    description: 'A boilerplate project with Next.js and Tailwind CSS',
+    title: 'VoiceCast AI - Interactive AI Podcasts',
+    description: 'Transform blogs into interactive, professional 3D podcasts powered by AI.',
     icons: {
         icon: [
             { url: '/favicon.ico', type: 'image/x-icon' }
